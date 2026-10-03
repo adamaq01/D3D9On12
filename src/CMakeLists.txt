@@ -11,6 +11,11 @@ file(GLOB_RECURSE EXTERNAL_INC ../external/*.h ../external/*.hpp)
 
 add_library(d3d9on12 SHARED ${SRC} ${INC} ${INL} ${EXTERNAL_INC} d3d9on12.rc d3d9on12.def)
 
+option(D3D9ON12_PRIVATE_DDI_TABLE_V1 "Only fill the original private DDI table entries, for older D3D9 runtimes such as Windows 10 1809's" OFF)
+if (D3D9ON12_PRIVATE_DDI_TABLE_V1)
+    target_compile_definitions(d3d9on12 PRIVATE D3D9ON12_PRIVATE_DDI_TABLE_V1=1)
+endif()
+
 if (CMAKE_VERSION VERSION_GREATER 3.16)
 	target_precompile_headers(d3d9on12 PRIVATE ../include/pch.h)
 endif()

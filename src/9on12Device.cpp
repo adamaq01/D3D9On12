@@ -46,7 +46,13 @@ namespace D3D9on12
             AddDeferredWaitsToResource
         };
 
+#if D3D9ON12_PRIVATE_DDI_TABLE_V1
+        // Older D3D9 runtimes (Windows 10 1809) only know the entries up to SetCurrentResourceState,
+        // and store the table in a buffer sized for them: copying more would overwrite their state.
+        memcpy(pPrivateDDITable, &cPrivateDDITable, offsetof(D3D9ON12_PRIVATE_DDI_TABLE, pfnSetMaximumFrameLatency));
+#else
         memcpy(pPrivateDDITable, &cPrivateDDITable, sizeof(D3D9ON12_PRIVATE_DDI_TABLE));
+#endif
         D3D9on12_DDI_ENTRYPOINT_END_AND_REPORT_HR((HANDLE)0, S_OK);
     }
 

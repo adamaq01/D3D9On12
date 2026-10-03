@@ -1,0 +1,99 @@
+# Builds d3d9on12.dll along with the DLLs it needs at runtime, and publishes them as artifacts.
+name: Build artifacts
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "*" ]
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: RelWithDebInfo
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # For current Windows versions
+          - variant: standard
+            cmake_flags: ""
+          # For the Windows 10 1809 D3D9 runtime, which only knows the original private DDI table
+          - variant: win10-1809
+            cmake_flags: "-DD3D9ON12_PRIVATE_DDI_TABLE_V1=ON"
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: NuGet/setup-nuget@fd55a6f3b34392fa83fde1454582407d8c714123 # v4.0
+      with:
+        nuget-version: latest
+
+    - name: Install Windows Driver Kit
+      shell: pwsh
+      run: |
+        winget install --id Microsoft.WindowsWDK.10.0.26100 `
+          --silent --accept-package-agreements --accept-source-agreements `
+          --disable-interactivity --custom "/features +"
+        $includeRoot     = "${env:ProgramFiles(x86)}\Windows Kits\10\Include\10.0.26100.0\um"
+        $requiredHeaders = @('d3d12TokenizedProgramFormat.hpp', 'd3d10umddi.h')
+        foreach ($header in $requiredHeaders) {
+          $path = Join-Path $includeRoot $header
+          if (-not (Test-Path $path)) {
+            throw "WDK install did not place $path (try /features + ?)"
+          }
+        }
+
+    - name: Configure CMake
+      run: cmake -B ${{github.workspace}}/build -DUSE_PIX=OFF -DCMAKE_SYSTEM_VERSION="10.0.26100.0" ${{matrix.cmake_flags}}
+
+    - name: Nuget Restore
+      shell: pwsh
+      run: |
+        $solutions = @(
+          Get-ChildItem "${{ github.workspace }}/build" -File |
+            Where-Object { $_.Extension -in '.sln', '.slnx' }
+        )
+
+        if ($solutions.Count -ne 1) {
+          throw "Expected exactly one generated solution, found $($solutions.Count): $($solutions.FullName -join ', ')"
+        }
+
+        nuget restore $solutions[0].FullName
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+    - name: Collect output
+      shell: pwsh
+      run: |
+        $build = "${{ github.workspace }}/build"
+        $output = "${{ github.workspace }}/output"
+        New-Item -ItemType Directory -Force $output | Out-Null
+
+        $d3d9on12 = Get-ChildItem $build -Recurse -File -Include 'd3d9on12.dll', 'd3d9on12.pdb' |
+          Where-Object { $_.Directory.Name -eq '${{ env.BUILD_TYPE }}' }
+        if (-not ($d3d9on12 | Where-Object Name -eq 'd3d9on12.dll')) {
+          throw "d3d9on12.dll not found in the build output"
+        }
+        $d3d9on12 | Copy-Item -Destination $output
+
+        # Delay loaded by d3d9on12.dll, shipped by its NuGet package
+        $dxbcSigner = Get-ChildItem "$build/packages" -Recurse -File -Filter 'dxbcsigner.dll' |
+          Where-Object { $_.FullName -match '[\\/]x64[\\/]' } |
+          Select-Object -First 1
+        if (-not $dxbcSigner) {
+          throw "x64 dxbcsigner.dll not found in the NuGet packages"
+        }
+        $dxbcSigner | Copy-Item -Destination $output
+
+        Get-ChildItem $output
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: d3d9on12-${{ matrix.variant }}
+        path: ${{ github.workspace }}/output
+        if-no-files-found: error
