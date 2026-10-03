@@ -21,9 +21,10 @@ jobs:
           # For current Windows versions
           - variant: standard
             cmake_flags: ""
-          # For the Windows 10 1809 D3D9 runtime, which only knows the original private DDI table
+          # For Windows 10 1809: its D3D9 runtime only knows the original private DDI table, and
+          # dxcore.dll does not exist yet, so it is loaded dynamically with a fallback to DXGI
           - variant: win10-1809
-            cmake_flags: "-DD3D9ON12_PRIVATE_DDI_TABLE_V1=ON"
+            cmake_flags: "-DD3D9ON12_PRIVATE_DDI_TABLE_V1=ON -DHAVE_DXCORE_LIBRARY=OFF"
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
