@@ -203,6 +203,20 @@ namespace D3D9on12
         D3D9on12_DDI_ENTRYPOINT_END_AND_RETURN_HR(S_OK);
     }
 
+    // dxcore.dll only exists since Windows 10 2004, so it is looked up dynamically to fall back to
+    // DXGI on older versions, instead of failing to delay load it.
+    static HRESULT CreateDXCoreAdapterFactory(REFIID riid, void** ppFactory)
+    {
+        static const auto pfnDXCoreCreateAdapterFactory = []() -> HRESULT(APIENTRY*)(REFIID, void**)
+        {
+            HMODULE hDXCore = LoadLibraryExW(L"dxcore.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+            return hDXCore
+                ? reinterpret_cast<HRESULT(APIENTRY*)(REFIID, void**)>(GetProcAddress(hDXCore, "DXCoreCreateAdapterFactory"))
+                : nullptr;
+        }();
+        return pfnDXCoreCreateAdapterFactory ? pfnDXCoreCreateAdapterFactory(riid, ppFactory) : E_NOINTERFACE;
+    }
+
     Adapter::Adapter( _Inout_ D3DDDIARG_OPENADAPTER& OpenAdapter, LUID* pAdapterLUID, D3D9ON12_CREATE_DEVICE_ARGS2* pArgs ) :
         m_AdapterCallbacks( *OpenAdapter.pAdapterCallbacks ),
         m_pDevice(nullptr),
@@ -224,7 +238,7 @@ namespace D3D9on12
 
                 {
                     CComPtr<IDXCoreAdapterFactory> pFactory;
-                    if (SUCCEEDED(DXCoreCreateAdapterFactory(IID_PPV_ARGS(&pFactory))))
+                    if (SUCCEEDED(CreateDXCoreAdapterFactory(IID_PPV_ARGS(&pFactory))))
                     {
                         (void)pFactory->GetAdapterByLuid(*pAdapterLUID, IID_PPV_ARGS(&pAdapter));
                     }
